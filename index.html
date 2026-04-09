@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wake-Up Decider</title>
+    
+    <link rel="icon" href="image_108.png">
+    <link rel="apple-touch-icon" href="image_108.png">
+
+    <style>
+        :root {
+            /* 寝る前なのでダークモードを基調とする */
+            --main: #eee;
+            --bg: #1a1a1a;
+            --accent: #333;
+            --card-bg: #252525;
+            --radius: 15px;
+            --text-gray: #aaa;
+            --highlight: #bb86fc; /* スッキリ起きれる時間のアクセント色 */
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--main);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 { font-size: 1.8rem; font-weight: 800; margin-bottom: 8px; letter-spacing: -1px; }
+        .subtitle { font-size: 0.9rem; color: var(--text-gray); font-weight: 600; margin-bottom: 30px; }
+
+        /* メインの答え表示エリア */
+        .results-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .time-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: var(--radius);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.1s;
+            border: 2px solid transparent;
+        }
+        .time-card:active { transform: scale(0.98); background: var(--accent); }
+        .time-card.best { border-color: var(--highlight); }
+
+        .time-info { text-align: left; }
+        .wake-time { font-size: 2rem; font-weight: 900; display: block; line-height: 1; margin-bottom: 5px; }
+        .sleep-duration { font-size: 0.85rem; color: var(--text-gray); font-weight: 700; }
+
+        .cycle-badge {
+            background: var(--accent);
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: var(--highlight);
+        }
+
+        .note {
+            font-size: 0.75rem;
+            color: var(--text-gray);
+            margin: 20px 0;
+            line-height: 1.5;
+            font-weight: 600;
+        }
+
+        /* フッターボタン */
+        .footer-btns { display: flex; gap: 10px; margin-top: 20px; margin-bottom: 20px; }
+        .kofi-btn { flex: 6; background: #eee; color: #1a1a1a; padding: 14px; border-radius: var(--radius); text-decoration: none; font-weight: bold; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+        .home-btn { flex: 4; background: var(--accent); color: var(--main); border: none; padding: 14px; border-radius: var(--radius); font-weight: 800; font-size: 13px; cursor: pointer; }
+
+        footer { font-size: 11px; color: #666; line-height: 1.8; font-weight: 500; }
+        footer a { color: inherit; text-decoration: underline; }
+
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; z-index: 100; }
+        .modal-content { background: var(--card-bg); color: var(--main); width: 85%; max-width: 340px; padding: 30px; border-radius: var(--radius); text-align: left; position: relative; }
+        .close-x { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #888; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Wake-Up</h1>
+        <p class="subtitle">If you sleep NOW, wake up at...</p>
+    </header>
+
+    <div class="results-area" id="results">
+        </div>
+
+    <p class="note">
+        *Includes a 15-minute buffer to fall asleep.<br>
+        Tap a time to copy it for your alarm.
+    </p>
+
+    <div class="footer-btns">
+        <a href="https://ko-fi.com/afrorakda" target="_blank" class="kofi-btn">☕️buy me a coffee</a>
+        <button class="home-btn" onclick="showModal()">Add Home</button>
+    </div>
+
+    <footer>
+        <div>No login / No tracking / No ads / Browser only</div>
+        <div><a href="https://afrorakda.com/privacy/">Privacy Policy</a> / afrorakda © 2026</div>
+    </footer>
+</div>
+
+<div id="modal" onclick="hideModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <span class="close-x" onclick="hideModal()">×</span>
+        <h3>📱 Install</h3>
+        <p>Add to your home screen.</p>
+        <p>🍏 <strong>iPhone (Safari):</strong><br>Tap Share, then Add to Home Screen.</p>
+        <p>🤖 <strong>Android (Chrome):</strong><br>Tap Menu (⋮), then Add to Home Screen.</p>
+    </div>
+</div>
+
+<script>
+    function calculateWakeTimes() {
+        const resultsArea = document.getElementById('results');
+        resultsArea.innerHTML = '';
+
+        const now = new Date();
+        const fallAsleepBuffer = 15; // 入眠までの15分
+        const startTime = new Date(now.getTime() + fallAsleepBuffer * 60000);
+
+        // 3サイクル(4.5h)から6サイクル(9.0h)まで表示
+        const cycles = [3, 4, 5, 6];
+        
+        cycles.forEach((cycle, index) => {
+            const sleepMinutes = cycle * 90;
+            const wakeTime = new Date(startTime.getTime() + sleepMinutes * 60000);
+            
+            const hours = wakeTime.getHours().toString().padStart(2, '0');
+            const minutes = wakeTime.getMinutes().toString().padStart(2, '0');
+            const timeStr = `${hours}:${minutes}`;
+            
+            const durationH = Math.floor(sleepMinutes / 60);
+            const durationM = sleepMinutes % 60;
+
+            const card = document.createElement('div');
+            card.className = `time-card ${cycle === 5 ? 'best' : ''}`;
+            card.onclick = () => copyTime(timeStr, card);
+            
+            card.innerHTML = `
+                <div class="time-info">
+                    <span class="wake-time">${timeStr}</span>
+                    <span class="sleep-duration">${durationH}h ${durationM}m Sleep</span>
+                </div>
+                <div class="cycle-badge">${cycle} Cycles</div>
+            `;
+            
+            resultsArea.appendChild(card);
+        });
+    }
+
+    async function copyTime(text, element) {
+        try {
+            await navigator.clipboard.writeText(text);
+            const originalHTML = element.innerHTML;
+            element.style.borderColor = "#4caf50";
+            setTimeout(() => {
+                element.style.borderColor = element.classList.contains('best') ? "var(--highlight)" : "transparent";
+            }, 1000);
+        } catch (err) {
+            console.error('Failed to copy');
+        }
+    }
+
+    // 初期実行
+    calculateWakeTimes();
+
+    // 1分ごとに更新（放置していても時間がずれないように）
+    setInterval(calculateWakeTimes, 60000);
+
+    function showModal() { document.getElementById('modal').style.display = 'flex'; }
+    function hideModal() { document.getElementById('modal').style.display = 'none'; }
+</script>
+
+</body>
+</html>
